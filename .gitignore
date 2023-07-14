@@ -1,7 +1,6 @@
 # Replit configuration
 .replit
 database.db
-venv/
 
 # Python specific
 __pycache__/
