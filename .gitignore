@@ -1,0 +1,16 @@
+# Replit configuration
+.replit
+database.db
+
+# Python specific
+__pycache__/
+*.pyc
+
+# Node.js specific
+node_modules/
+
+# JetBrains IDEs
+.idea/
+
+# Visual Studio Code
+.vscode/
