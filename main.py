@@ -1,22 +1,25 @@
 import os
-import statistics
-import sys
-import time
-import pickle
-import sqlite3
+import statistics # For calculating mean, median, and standard deviation in analyze_db function
+import sys 
+import time # For printing timestamps in printable_timestamp function
+import pickle # For pickling packets in pickle_pcap function
+import sqlite3 # For creating the database in load_pickle_to_sql function
 
-import tkinter as tk
-import matplotlib.pyplot as plt
-import pandas as pd
-import networkx as nx
+import tkinter as tk # For creating the main window in create_main_window function
+import matplotlib.pyplot as plt # For plotting histogram in analyze_db function
+import pandas as pd # For printing packet data in print_packet_data function
+import networkx as nx # For packet flow diagram in visualize_packet_flow_from_db function
 
-from scapy.utils import RawPcapReader
-from scapy.layers.l2 import Ether
-from scapy.layers.inet import IP, TCP
-from enum import Enum
-from tkinter import messagebox
-from tqdm import tqdm
-from tkinter import ttk
+from scapy.utils import RawPcapReader # For reading packets from a pcap file in pickle_pcap function
+from scapy.layers.l2 import Ether # For packet dissection in pickle_pcap function
+from scapy.layers.inet import IP, TCP # For packet dissection in pickle_pcap function
+from enum import Enum # For PktDirection enum in pickle_pcap function
+from tkinter import messagebox # For displaying error messages in fetch_packets function
+from tqdm import tqdm # For progress bar in pickle_pcap function
+from tkinter import ttk # For Treeview widget in fetch_packets function
+
+
+from visualize import visualize_packet_flow_from_db, visualize_packet_duration_histogram
 
 # Specify the path and name of the database file
 database_file = 'your_database.db'
@@ -598,7 +601,11 @@ load_pickle_to_sql('example-01.pickle', database_file)
 # print_packet_data(database_file)
 # select_and_analyze_packets()
 # Call the visualize_packet_flow_from_db function to generate the packet flow diagram
-# visualize_packet_flow_from_db(database_file)
+
 analyze_db(database_file)
 create_main_window(database_file)
-print("tsv")
+
+
+# Call the visualization functions as needed
+visualize_packet_flow_from_db(database_file)
+visualize_packet_duration_histogram(database_file)
