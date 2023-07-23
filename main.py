@@ -4,12 +4,15 @@ import sys
 import time  # For printing timestamps in printable_timestamp function
 import pickle  # For pickling packets in pickle_pcap function
 import sqlite3  # For creating the database in load_pickle_to_sql function
+import textwrap
+import binascii
 
 import tkinter as tk  # For creating the main window in create_main_window function
 import matplotlib.pyplot as plt  # For plotting histogram in analyze_db function
 import pandas as pd  # For printing packet data in print_packet_data function
 import networkx as nx  # For packet flow diagram in visualize_packet_flow_from_db function
 
+from scapy.all import *
 from scapy.utils import RawPcapReader  # For reading packets from a pcap file in pickle_pcap function
 from scapy.layers.l2 import Ether  # For packet dissection in pickle_pcap function
 from scapy.layers.inet import IP, TCP  # For packet dissection in pickle_pcap function
@@ -17,11 +20,16 @@ from enum import Enum  # For PktDirection enum in pickle_pcap function
 from tkinter import messagebox  # For displaying error messages in fetch_packets function
 from tqdm import tqdm  # For progress bar in pickle_pcap function
 from tkinter import ttk  # For Treeview widget in fetch_packets function
+from prettytable import PrettyTable
 
 from visualize import visualize_packet_flow_from_db, visualize_packet_duration_histogram, visualize_packet_size_distribution, visualize_packet_sequence_numbers, visualize_packet_interarrival_time, visualize_packet_throughput, visualize_window_size_variation, visualize_rtt_from_db
 
 # Specify the path and name of the database file
 database_file = 'database.db'
+
+pcap_file = 'ahmed_pc.pcap'
+
+pickle_file = 'pickle_file.pickle'
 
 # Create a connection to the database
 conn = sqlite3.connect(database_file)
@@ -32,6 +40,8 @@ cursor = conn.cursor()
 # Define the SQL statement to create a table
 create_table_sql = '''CREATE TABLE IF NOT EXISTS packets (
     id INTEGER PRIMARY KEY,
+    src_ip TEXT,
+    dst_ip TEXT,
     direction TEXT,
     ordinal INTEGER,
     relative_timestamp REAL,
@@ -40,7 +50,9 @@ create_table_sql = '''CREATE TABLE IF NOT EXISTS packets (
     ackno INTEGER,
     tcp_payload_len INTEGER,
     tcp_payload BLOB,
-    window INTEGER
+    window INTEGER,
+    src_mac TEXT,
+    dst_mac TEXT
 )'''
 
 # Execute the SQL statement to create the table
@@ -61,182 +73,86 @@ def printable_timestamp(ts, resol):
 
 
 def pickle_pcap(pcap_file_in, pickle_file_out):
-
   print('Processing {}...'.format(pcap_file_in))
 
-  client = '192.168.1.137:57080'
-  server = '152.19.134.43:80'
-
-  (client_ip, client_port) = client.split(':')
-  (server_ip, server_port) = server.split(':')
-
-  count = 0
+  connections = []
   interesting_packet_count = 0
 
-  server_sequence_offset = None
-  client_sequence_offset = None
+  packet_iterator = rdpcap(pcap_file_in)
 
-  # List of interesting packets, will finally be pickled.
-  # Each element of the list is a dictionary that contains fields of interest
-  # from the packet.
-  packets_for_analysis = []
-
-  # Get the total number of packets
-  total_packets = len(packets_for_analysis)
-
-  # Initialize the progress bar
+  total_packets = len(packet_iterator)
   progress_bar = tqdm(total=total_packets, desc='Processing', unit=' packets')
 
-  client_recv_window_scale = 0
-  server_recv_window_scale = 0
+  for pkt in packet_iterator:
+    try:
+      ether_pkt = pkt[Ether]
+    except IndexError:
+      # Skip packets without an Ethernet layer
+      continue
 
-  for (
-      pkt_data,
-      pkt_metadata,
-  ) in RawPcapReader(pcap_file_in):
-    count += 1
-    # Update the progress bar
-    progress_bar.update()
-
-    ether_pkt = Ether(pkt_data)
     if 'type' not in ether_pkt.fields:
       # LLC frames will have 'len' instead of 'type'.
       # We disregard those
       continue
 
     if ether_pkt.type != 0x0800:
-      # disregard non-IPv4 packets
+      # Disregard non-IPv4 packets
       continue
 
-    ip_pkt = ether_pkt[IP]
+    ip_pkt = pkt[IP]
 
     if ip_pkt.proto != 6:
-      # Ignore non-TCP packet
+      # Ignore non-TCP packets
       continue
 
+    src_ip, dst_ip = ip_pkt.src, ip_pkt.dst
     tcp_pkt = ip_pkt[TCP]
 
-    direction = PktDirection.not_defined
+    src_port, dst_port = tcp_pkt.sport, tcp_pkt.dport
 
-    if ip_pkt.src == client_ip:
-      if tcp_pkt.sport != int(client_port):
-        continue
-      if ip_pkt.dst != server_ip:
-        continue
-      if tcp_pkt.dport != int(server_port):
-        continue
-      direction = PktDirection.client_to_server
-    elif ip_pkt.src == server_ip:
-      if tcp_pkt.sport != int(server_port):
-        continue
-      if ip_pkt.dst != client_ip:
-        continue
-      if tcp_pkt.dport != int(client_port):
-        continue
-      direction = PktDirection.server_to_client
-    else:
-      continue
+    # Check if this packet belongs to a connection
+    connection_key = (src_ip, src_port, dst_ip, dst_port)
 
     interesting_packet_count += 1
-    if interesting_packet_count == 1:
-      first_pkt_timestamp = (pkt_metadata.tshigh << 32) | pkt_metadata.tslow
-      first_pkt_timestamp_resolution = pkt_metadata.tsresol
-      first_pkt_ordinal = count
 
-    last_pkt_timestamp = (pkt_metadata.tshigh << 32) | pkt_metadata.tslow
-    last_pkt_timestamp_resolution = pkt_metadata.tsresol
-    last_pkt_ordinal = count
+    if connection_key not in [conn['connection_key'] for conn in connections]:
+      # This is a new connection, add it to the connections list
+      connection_data = {'connection_key': connection_key, 'packets': []}
+      connections.append(connection_data)
 
-    this_pkt_relative_timestamp = last_pkt_timestamp - first_pkt_timestamp
+    # Append the packet data to the corresponding connection
+    connection_data = next(conn for conn in connections
+                           if conn['connection_key'] == connection_key)
+    packet_data = {
+      'ordinal': interesting_packet_count,
+      'relative_timestamp': pkt.time,
+      'tcp_flags': str(tcp_pkt.flags),
+      'seqno': tcp_pkt.seq,
+      'ackno': tcp_pkt.ack,
+      'tcp_payload_len': ip_pkt.len - (ip_pkt.ihl * 4) - (tcp_pkt.dataofs * 4),
+      'tcp_payload': bytes(tcp_pkt.payload),
+      'window': tcp_pkt.window,
+      'direction': str(PktDirection.client_to_server),  # Convert to string
+      'src_mac': ether_pkt.src,
+      'dst_mac': ether_pkt.dst,
+    }
 
-    if direction == PktDirection.client_to_server:
-      if client_sequence_offset is None:
-        client_sequence_offset = tcp_pkt.seq
-      relative_offset_seq = tcp_pkt.seq - client_sequence_offset
-    else:
-      assert direction == PktDirection.server_to_client
-      if server_sequence_offset is None:
-        server_sequence_offset = tcp_pkt.seq
-      relative_offset_seq = tcp_pkt.seq - server_sequence_offset
+    connection_data['packets'].append(packet_data)
 
-    # If this TCP packet has the Ack bit set, then it must carry an ack
-    # number.
-    if 'A' not in str(tcp_pkt.flags):
-      relative_offset_ack = 0
-    else:
-      if direction == PktDirection.client_to_server:
-        relative_offset_ack = tcp_pkt.ack - server_sequence_offset
-      else:
-        relative_offset_ack = tcp_pkt.ack - client_sequence_offset
+    progress_bar.update()
 
-    # Determine the TCP payload length. IP fragmentation will mess up this
-    # logic, so first check that this is an unfragmented packet
-    if (ip_pkt.flags == 'MF') or (ip_pkt.frag != 0):
-      print('No support for fragmented IP packets')
-      return False
-
-    tcp_payload_len = ip_pkt.len - (ip_pkt.ihl * 4) - (tcp_pkt.dataofs * 4)
-
-    # Look for the 'Window Scale' TCP option if this is a SYN or SYN-ACK
-    # packet.
-    if 'S' in str(tcp_pkt.flags):
-      for (
-          opt_name,
-          opt_value,
-      ) in tcp_pkt.options:
-        if opt_name == 'WScale':
-          if direction == PktDirection.client_to_server:
-            client_recv_window_scale = opt_value
-          else:
-            server_recv_window_scale = opt_value
-          break
-
-    # Create a dictionary and populate it with data that we'll need in the
-    # analysis phase.
-
-    pkt_data = {}
-    pkt_data['direction'] = direction
-    pkt_data['ordinal'] = last_pkt_ordinal
-    pkt_data['relative_timestamp'] = this_pkt_relative_timestamp / \
-                                     pkt_metadata.tsresol
-    pkt_data['tcp_flags'] = str(tcp_pkt.flags)
-    pkt_data['seqno'] = relative_offset_seq
-    pkt_data['ackno'] = relative_offset_ack
-    pkt_data['tcp_payload_len'] = tcp_payload_len
-    pkt_data['tcp_payload'] = bytes(tcp_pkt.payload)
-    if direction == PktDirection.client_to_server:
-      pkt_data['window'] = tcp_pkt.window << client_recv_window_scale
-    else:
-      pkt_data['window'] = tcp_pkt.window << server_recv_window_scale
-
-    packets_for_analysis.append(pkt_data)
-
-  # Close the progress bar
   progress_bar.close()
-  # ---
-  data = {
-    'client_ip': client_ip,
-    'server_ip': server_ip,
-    'packets': packets_for_analysis
-  }
 
   print('{} contains {} packets ({} interesting)'.format(
-    pcap_file_in, count, interesting_packet_count))
-
-  # print('First packet in connection: Packet #{} {}'.format(
-  #   first_pkt_ordinal,
-  #   printable_timestamp(first_pkt_timestamp, first_pkt_timestamp_resolution)))
-  # print(' Last packet in connection: Packet #{} {}'.format(
-  #   last_pkt_ordinal,
-  #   printable_timestamp(last_pkt_timestamp, last_pkt_timestamp_resolution)))
+    pcap_file_in, total_packets, interesting_packet_count))
 
   print('Writing pickle file {}...'.format(pickle_file_out), end='')
   with open(pickle_file_out, 'wb') as pickle_fd:
-    pickle.dump(data, pickle_fd)
+    pickle.dump(connections, pickle_fd)
   print('done.')
 
 
-# ---
+###-------------------------------------------------------------------###
 
 
 def load_pickle_to_sql(pickle_file_in, db_file):
@@ -257,41 +173,45 @@ def load_pickle_to_sql(pickle_file_in, db_file):
 
   # Load packets from the pickled file
   with open(pickle_file_in, 'rb') as pickle_fd:
-    data = pickle.load(pickle_fd)
-
-  # Extract client IP, server IP, and packets for analysis from the loaded data
-  client_ip = data['client_ip']
-  server_ip = data['server_ip']
-  packets_for_analysis = data['packets']
+    connections = pickle.load(pickle_fd)
 
   # Get the total number of packets
-  total_packets = len(packets_for_analysis)
+  total_packets = sum(len(connection['packets']) for connection in connections)
 
   # Create a progress bar
   progress_bar = tqdm(total=total_packets, unit='packet')
 
-  # Iterate through packets_for_analysis and insert each packet into the table
-  for pkt_data in packets_for_analysis:
-    direction = pkt_data['direction'].value
-    ordinal = pkt_data['ordinal']
-    relative_timestamp = pkt_data['relative_timestamp']
-    tcp_flags = pkt_data['tcp_flags']
-    seqno = pkt_data['seqno']
-    ackno = pkt_data['ackno']
-    tcp_payload_len = pkt_data['tcp_payload_len']
-    tcp_payload = pkt_data['tcp_payload']
-    window = pkt_data['window']
+  # Iterate through connections and their packets and insert each packet into the table
+  for connection in connections:
+    for pkt_data in connection['packets']:
+      src_ip = connection['connection_key'][
+        0]  # Get the source IP from the connection key
+      dst_ip = connection['connection_key'][
+        2]  # Get the destination IP from the connection key
+      direction = pkt_data['direction']
+      ordinal = int(pkt_data['ordinal'])  # Convert ordinal to integer
+      relative_timestamp = int(
+        pkt_data['relative_timestamp'])  # Convert timestamp to integer
+      tcp_flags = pkt_data['tcp_flags']
+      seqno = pkt_data['seqno']
+      ackno = pkt_data['ackno']
+      tcp_payload_len = pkt_data['tcp_payload_len']
+      tcp_payload = pkt_data['tcp_payload']
+      window = pkt_data['window']
+      src_mac = pkt_data['src_mac']
+      dst_mac = pkt_data['dst_mac']
 
-    insert_sql = '''
-            INSERT INTO packets (direction, ordinal, relative_timestamp, tcp_flags, seqno, ackno, tcp_payload_len, tcp_payload, window)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        '''
-    values = (direction, ordinal, relative_timestamp, tcp_flags, seqno, ackno,
-              tcp_payload_len, tcp_payload, window)
-    cursor.execute(insert_sql, values)
+      insert_sql = '''
+                INSERT INTO packets (src_ip, dst_ip, direction, ordinal, relative_timestamp, tcp_flags, seqno, ackno, tcp_payload_len, tcp_payload, window, src_mac, dst_mac)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?,?)
+            '''
+      values = (src_ip, dst_ip, direction, ordinal, relative_timestamp,
+                tcp_flags, seqno, ackno, tcp_payload_len,
+                sqlite3.Binary(tcp_payload), window, src_mac, dst_mac)
+      cursor.execute(insert_sql, values)
 
-    # Update the progress bar
-    progress_bar.update(1)
+      # Update the progress bar
+      progress_bar.update(1)
 
   # Commit the changes to the database
   conn.commit()
@@ -306,6 +226,9 @@ def load_pickle_to_sql(pickle_file_in, db_file):
   progress_bar.close()
 
   print('Stored {} packets in the database.'.format(total_packets))
+
+
+###------------------------------------------###
 
 
 def print_packet_data(db_file, direction=None):
@@ -339,6 +262,57 @@ def calculate_packet_duration(timestamp):
   return duration
 
 
+def print_packet_content(packet_id):
+  select_sql = 'SELECT * FROM packets WHERE id = ?'
+  cursor.execute(select_sql, (packet_id, ))
+
+  # Fetch the selected row
+  row = cursor.fetchone()
+
+  if row:
+    _, src_ip, dst_ip, direction, ordinal, relative_timestamp, tcp_flags, seqno, ackno, tcp_payload_len, tcp_payload, window, src_mac, dst_mac = row
+
+    # Create a PrettyTable object
+    table = PrettyTable()
+
+    # Set the field names for the table
+    table.field_names = ["Field", "Value"]
+
+    # Add packet details as rows to the table
+    table.add_row(["Packet ID", packet_id])
+    table.add_row(["Source IP", src_ip])
+    table.add_row(["Destination IP", dst_ip])
+    table.add_row(["Direction", direction])
+    table.add_row(["Ordinal", ordinal])
+    table.add_row(["Relative Timestamp", relative_timestamp])
+    table.add_row(["TCP Flags", tcp_flags])
+    table.add_row(["Sequence Number", seqno])
+    table.add_row(["Acknowledgment Number", ackno])
+    table.add_row(["TCP Payload Length", tcp_payload_len])
+    table.add_row(["Window", window])
+    table.add_row(["Source MAC", src_mac])
+    table.add_row(["Destination MAC", dst_mac])
+
+    try:
+      # Attempt to decode the TCP payload as UTF-8
+      payload_text = binascii.hexlify(tcp_payload).decode("utf-8")
+    except UnicodeDecodeError:
+      # If decoding as UTF-8 fails, decode with errors="replace" to replace invalid characters
+      payload_text = tcp_payload.decode("utf-8", errors="replace")
+
+    # Add the TCP payload to the table with text wrapping
+    payload_wrapped = textwrap.fill(payload_text, width=80)
+    table.add_row(["TCP Payload", payload_wrapped])
+
+    # Set the alignment of the table to "l" for left alignment
+    table.align = "l"
+
+    # Print the table
+    print(table)
+  else:
+    print("Packet not found.")
+
+
 def analyze_packet(packet_id):
   select_sql = 'SELECT * FROM packets WHERE id = ?'
   cursor.execute(select_sql, (packet_id, ))
@@ -347,24 +321,10 @@ def analyze_packet(packet_id):
   row = cursor.fetchone()
 
   if row:
-    id, direction, ordinal, relative_timestamp, tcp_flags, seqno, ackno, tcp_payload_len, tcp_payload, window = row
-    # Perform analysis on the selected packet
-    print("Analyzing Packet ID:", id)
-    print("Direction:", direction)
+    id, src_ip, dst_ip, direction, ordinal, relative_timestamp, tcp_flags, seqno, ackno, tcp_payload_len, tcp_payload, window, src_mac, dst_mac = row
     # Example Analysis:
     # Calculate packet duration
     packet_duration = calculate_packet_duration(relative_timestamp)
-
-    # Print packet details
-    print("Ordinal:", ordinal)
-    print("Relative Timestamp:", relative_timestamp)
-    print("TCP Flags:", tcp_flags)
-    print("Sequence Number:", seqno)
-    print("Acknowledgment Number:", ackno)
-    print("TCP Payload Length:", tcp_payload_len)
-    print("TCP Pay Load: ", tcp_payload)
-    print("Window:", window)
-
     # Print packet duration
     print("Packet Duration:", packet_duration)
 
@@ -381,6 +341,7 @@ def select_and_analyze_packets():
   if packet_id.lower() == 'q':
     return
 
+  print_packet_content(packet_id)
   analyze_packet(packet_id)
 
   # Prompt for further actions
@@ -389,12 +350,10 @@ def select_and_analyze_packets():
     select_and_analyze_packets()
 
 
-
-
-pickle_pcap('example-01.pcap', 'example-01.pickle')
-load_pickle_to_sql('example-01.pickle', database_file)
-# print_packet_data(database_file)
-# select_and_analyze_packets()
+pickle_pcap(pcap_file, pickle_file)
+load_pickle_to_sql(pickle_file, database_file)
+print_packet_data(database_file)
+select_and_analyze_packets()
 
 # Call the visualization functions as needed
 visualize_packet_flow_from_db(database_file)
@@ -405,5 +364,3 @@ visualize_packet_interarrival_time(database_file)
 visualize_packet_throughput(database_file)
 visualize_window_size_variation(database_file)
 visualize_rtt_from_db(database_file)
-
-

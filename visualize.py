@@ -352,6 +352,10 @@ def visualize_rtt_from_db(database_file):
   # Calculate RTT values from the database
   rtt_values = calculate_rtt(database_file)
 
+  if not rtt_values:
+    print("No Round-Trip Time (RTT) data found in the database.")
+    return
+
   # Calculate mean, median, and standard deviation of RTT values
   mean_rtt = statistics.mean(rtt_values)
   median_rtt = statistics.median(rtt_values)
