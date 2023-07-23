@@ -1,25 +1,20 @@
 import os
-
 import sys
 import time  # For printing timestamps in printable_timestamp function
 import pickle  # For pickling packets in pickle_pcap function
 import sqlite3  # For creating the database in load_pickle_to_sql function
 import textwrap
 import binascii
+import re
+from Analyze import analyze_popular_urls, analyze_user_agents, analyze_security_headers, analyze_https_adoption, analyze_authentication_headers, analyze_suspicious_url_patterns
 
-import tkinter as tk  # For creating the main window in create_main_window function
-import matplotlib.pyplot as plt  # For plotting histogram in analyze_db function
 import pandas as pd  # For printing packet data in print_packet_data function
-import networkx as nx  # For packet flow diagram in visualize_packet_flow_from_db function
-
 from scapy.all import *
 from scapy.utils import RawPcapReader  # For reading packets from a pcap file in pickle_pcap function
 from scapy.layers.l2 import Ether  # For packet dissection in pickle_pcap function
 from scapy.layers.inet import IP, TCP  # For packet dissection in pickle_pcap function
 from enum import Enum  # For PktDirection enum in pickle_pcap function
-from tkinter import messagebox  # For displaying error messages in fetch_packets function
-from tqdm import tqdm  # For progress bar in pickle_pcap function
-from tkinter import ttk  # For Treeview widget in fetch_packets function
+from tqdm import tqdm  # For progress bar in pickle_pcap functionz
 from prettytable import PrettyTable
 
 from visualize import visualize_packet_flow_from_db, visualize_packet_duration_histogram, visualize_packet_size_distribution, visualize_packet_sequence_numbers, visualize_packet_interarrival_time, visualize_packet_throughput, visualize_window_size_variation, visualize_rtt_from_db
@@ -27,7 +22,7 @@ from visualize import visualize_packet_flow_from_db, visualize_packet_duration_h
 # Specify the path and name of the database file
 database_file = 'database.db'
 
-pcap_file = 'ahmed_pc.pcap'
+pcap_file = 'example-01.pcap'
 
 pickle_file = 'pickle_file.pickle'
 
@@ -150,10 +145,7 @@ def pickle_pcap(pcap_file_in, pickle_file_out):
   with open(pickle_file_out, 'wb') as pickle_fd:
     pickle.dump(connections, pickle_fd)
   print('done.')
-
-
 ###-------------------------------------------------------------------###
-
 
 def load_pickle_to_sql(pickle_file_in, db_file):
   print('Processing {}...'.format(pickle_file_in))
@@ -229,8 +221,6 @@ def load_pickle_to_sql(pickle_file_in, db_file):
 
 
 ###------------------------------------------###
-
-
 def print_packet_data(db_file, direction=None):
   # Create a connection to the database
   conn = sqlite3.connect(db_file)
@@ -354,6 +344,175 @@ pickle_pcap(pcap_file, pickle_file)
 load_pickle_to_sql(pickle_file, database_file)
 print_packet_data(database_file)
 select_and_analyze_packets()
+
+
+def analyze_popular_urls(db_file, top_n=10):
+  conn = sqlite3.connect(db_file)
+  query = '''
+        SELECT src_ip, dst_ip, tcp_payload
+        FROM packets
+        WHERE tcp_payload LIKE '%HTTP%'
+    '''
+  df = pd.read_sql_query(query, conn)
+
+  # Decode TCP payload to string assuming it contains text data
+  df['tcp_payload'] = df['tcp_payload'].apply(
+    lambda x: x.decode('utf-8', errors='ignore'))
+
+  # Extract URLs from HTTP requests
+  df['url'] = df['tcp_payload'].str.extract(r'GET ([^\s]+) HTTP')
+
+  # Count occurrences of each URL
+  popular_urls = df['url'].value_counts().nlargest(top_n)
+
+  conn.close()
+  return popular_urls
+
+
+#User-Agent Analysis:
+def analyze_user_agents(db_file, top_n=10):
+  conn = sqlite3.connect(db_file)
+  query = '''
+        SELECT src_ip, dst_ip, tcp_payload
+        FROM packets
+        WHERE tcp_payload LIKE '%User-Agent:%'
+    '''
+  df = pd.read_sql_query(query, conn)
+
+  # Decode TCP payload to string assuming it contains text data
+  df['tcp_payload'] = df['tcp_payload'].apply(
+    lambda x: x.decode('utf-8', errors='ignore'))
+
+  # Extract User-Agent values from HTTP requests
+  user_agents_requests = df[df['tcp_payload'].str.contains(
+    'User-Agent:')]['tcp_payload'].str.extract(r'User-Agent: ([^\r\n]+)')
+
+  # Extract User-Agent values from HTTP responses
+  user_agents_responses = df[~df['tcp_payload'].str.contains('User-Agent:')][
+    'tcp_payload'].str.extract(r'User-Agent: ([^\r\n]+)')
+
+  # Combine both occurrences of User-Agent values
+  user_agents = pd.concat([user_agents_requests, user_agents_responses],
+                          ignore_index=True)
+
+  # Count occurrences of each User-Agent
+  top_user_agents = user_agents[0].value_counts().nlargest(top_n)
+
+  conn.close()
+  return top_user_agents
+
+
+#Security Header Analysis:
+def analyze_security_headers(db_file):
+  conn = sqlite3.connect(db_file)
+  query = '''
+        SELECT src_ip, dst_ip, tcp_payload
+        FROM packets
+        WHERE tcp_payload LIKE '%HTTP%'
+    '''
+  df = pd.read_sql_query(query, conn)
+
+  # Decode TCP payload to string assuming it contains text data
+  df['tcp_payload'] = df['tcp_payload'].apply(
+    lambda x: x.decode('utf-8', errors='ignore'))
+
+  # Extract security-related headers from HTTP responses using regular expression
+  security_headers = df['tcp_payload'].apply(lambda x: re.findall(
+    r'(Strict-Transport-Security:|X-Frame-Options:|Content-Security-Policy:|X-XSS-Protection:|X-Content-Type-Options:|X-Content-Security-Policy:) ([^\r\n]+)',
+    x))
+
+  conn.close()
+  return security_headers
+
+
+#HTTPS Adoption Analysis:
+def analyze_https_adoption(db_file):
+  conn = sqlite3.connect(db_file)
+  query = '''
+        SELECT src_ip, dst_ip, tcp_payload
+        FROM packets
+        WHERE tcp_payload LIKE '%HTTP%'
+    '''
+  df = pd.read_sql_query(query, conn)
+
+  # Decode TCP payload to string assuming it contains text data
+  df['tcp_payload'] = df['tcp_payload'].apply(
+    lambda x: x.decode('utf-8', errors='ignore'))
+
+  # Extract HTTP/HTTPS request types based on the presence of "GET" or "CONNECT" in the payload
+  http_vs_https = df['tcp_payload'].str.extract(
+    r'([A-Z]+) (https?:\/\/[^\s]+) HTTP')
+
+  # Count occurrences of HTTP and HTTPS requests
+  https_count = (http_vs_https[0] == 'CONNECT').sum()
+  http_count = (http_vs_https[0] == 'GET').sum()
+
+  conn.close()
+  return https_count, http_count
+
+
+#Authentication Analysis:
+def analyze_authentication_headers(db_file):
+  conn = sqlite3.connect(db_file)
+  query = '''
+        SELECT src_ip, dst_ip, tcp_payload
+        FROM packets
+        WHERE tcp_payload LIKE '%Authorization:%' OR tcp_payload LIKE '%WWW-Authenticate:%'
+    '''
+  df = pd.read_sql_query(query, conn)
+  conn.close()
+  return df
+
+
+# Suspicious URL Patterns Analysis:
+def analyze_suspicious_url_patterns(db_file):
+  conn = sqlite3.connect(db_file)
+  query = '''
+        SELECT src_ip, dst_ip, tcp_payload
+        FROM packets
+        WHERE tcp_payload LIKE '%HTTP%'
+    '''
+  df = pd.read_sql_query(query, conn)
+
+  # Decode TCP payload to string assuming it contains text data
+  df['tcp_payload'] = df['tcp_payload'].apply(
+    lambda x: x.decode('utf-8', errors='ignore'))
+
+  # Identify suspicious URL patterns using regular expressions
+  suspicious_urls = df['tcp_payload'].str.extractall(
+    r'GET ([^\s]+) HTTP').reset_index(drop=True)
+  suspicious_urls.columns = ['url']
+
+  suspicious_patterns = suspicious_urls[suspicious_urls['url'].str.contains(
+    r'sql|cmd|php|jsp|asp', case=False, na=False)]
+
+  conn.close()
+  return suspicious_patterns
+
+
+# Run HTTP analysis functions
+popular_urls = analyze_popular_urls(database_file)
+user_agents = analyze_user_agents(database_file)
+security_headers = analyze_security_headers(database_file)
+https_count, http_count = analyze_https_adoption(database_file)
+auth_headers = analyze_authentication_headers(database_file)
+suspicious_patterns = analyze_suspicious_url_patterns(database_file)
+
+# Notify the client with the results
+print("HTTP Analysis Results:")
+print("1. Popular URLs:")
+print(popular_urls)
+print("\n2. Top User Agents:")
+print(user_agents)
+print("\n3. Security Headers:")
+print(security_headers)
+print("\n4. HTTPS Adoption:")
+print(f"Number of HTTPS requests: {https_count}")
+print(f"Number of HTTP requests: {http_count}")
+print("\n5. Authentication Headers:")
+print(auth_headers)
+print("\n6. Suspicious URL Patterns:")
+print(suspicious_patterns)
 
 # Call the visualization functions as needed
 visualize_packet_flow_from_db(database_file)
