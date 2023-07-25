@@ -1,3 +1,4 @@
+import argparse
 import sqlite3
 import pandas as pd  # For printing packet data in print_packet_data function
 
@@ -122,10 +123,36 @@ def analyze_suspicious_url_patterns(db_file):
 
 
 if __name__ == '__main__':
-  database_file = 'database.db'
-  analyze_popular_urls(database_file)
-  analyze_user_agents(database_file)
-  analyze_security_headers(database_file)
-  analyze_https_adoption(database_file)
-  analyze_authentication_headers(database_file)
-  analyze_suspicious_url_patterns(database_file)
+  parser = argparse.ArgumentParser(description='Network Traffic Analysis')
+  parser.add_argument('database_file',
+                      type=str,
+                      help='Path to the SQLite database file')
+  args = parser.parse_args()
+
+  database_file = args.database_file
+  popular_urls = analyze_popular_urls(database_file)
+  user_agents = analyze_user_agents(database_file)
+  security_headers = analyze_security_headers(database_file)
+  https_count, http_count = analyze_https_adoption(database_file)
+  auth_headers = analyze_authentication_headers(database_file)
+  suspicious_patterns = analyze_suspicious_url_patterns(database_file)
+
+  # Display the results
+  print("----- Popular URLs Analysis -----")
+  print(popular_urls)
+
+  print("\n----- User-Agent Analysis -----")
+  print(user_agents)
+
+  print("\n----- Security Headers Analysis -----")
+  print(security_headers)
+
+  print("\n----- HTTPS Adoption Analysis -----")
+  print(f"HTTPS Requests: {https_count}")
+  print(f"HTTP Requests: {http_count}")
+
+  print("\n----- Authentication Headers Analysis -----")
+  print(auth_headers)
+
+  print("\n----- Suspicious URL Patterns Analysis -----")
+  print(suspicious_patterns)

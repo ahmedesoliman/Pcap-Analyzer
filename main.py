@@ -1,12 +1,10 @@
-import os
-import sys
 import time  # For printing timestamps in printable_timestamp function
 import pickle  # For pickling packets in pickle_pcap function
 import sqlite3  # For creating the database in load_pickle_to_sql function
 import textwrap
 import binascii
 import re
-from Analyze import analyze_popular_urls, analyze_user_agents, analyze_security_headers, analyze_https_adoption, analyze_authentication_headers, analyze_suspicious_url_patterns
+from analyze import analyze_popular_urls, analyze_user_agents, analyze_security_headers, analyze_https_adoption, analyze_authentication_headers, analyze_suspicious_url_patterns
 
 import pandas as pd  # For printing packet data in print_packet_data function
 from scapy.all import *
@@ -22,7 +20,7 @@ from visualize import visualize_packet_flow_from_db, visualize_packet_duration_h
 # Specify the path and name of the database file
 database_file = 'database.db'
 
-pcap_file = 'example-01.pcap'
+pcap_file = 'pcap/bigFlows.pcap'
 
 pickle_file = 'pickle_file.pickle'
 
@@ -67,7 +65,7 @@ def printable_timestamp(ts, resol):
   return '{}.{}'.format(ts_sec_str, ts_subsec)
 
 
-def pickle_pcap(pcap_file_in, pickle_file_out):
+def filter_and_pickle_pcap(pcap_file_in, pickle_file_out):
   print('Processing {}...'.format(pcap_file_in))
 
   connections = []
@@ -145,7 +143,10 @@ def pickle_pcap(pcap_file_in, pickle_file_out):
   with open(pickle_file_out, 'wb') as pickle_fd:
     pickle.dump(connections, pickle_fd)
   print('done.')
+
+
 ###-------------------------------------------------------------------###
+
 
 def load_pickle_to_sql(pickle_file_in, db_file):
   print('Processing {}...'.format(pickle_file_in))
@@ -340,7 +341,7 @@ def select_and_analyze_packets():
     select_and_analyze_packets()
 
 
-pickle_pcap(pcap_file, pickle_file)
+filter_and_pickle_pcap(pcap_file, pickle_file)
 load_pickle_to_sql(pickle_file, database_file)
 print_packet_data(database_file)
 select_and_analyze_packets()
