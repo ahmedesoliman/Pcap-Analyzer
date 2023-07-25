@@ -64,7 +64,7 @@ def printable_timestamp(ts, resol):
   ts_sec_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(ts_sec))
   return '{}.{}'.format(ts_sec_str, ts_subsec)
 
-
+# Sobhan's & Petar's Code
 def filter_and_pickle_pcap(pcap_file_in, pickle_file_out):
   print('Processing {}...'.format(pcap_file_in))
 
@@ -147,7 +147,7 @@ def filter_and_pickle_pcap(pcap_file_in, pickle_file_out):
 
 ###-------------------------------------------------------------------###
 
-
+# Ahmed's & Jorge's Code
 def load_pickle_to_sql(pickle_file_in, db_file):
   print('Processing {}...'.format(pickle_file_in))
 
