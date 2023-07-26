@@ -13,6 +13,10 @@ def analyze_popular_urls(db_file, top_n=10):
     '''
   df = pd.read_sql_query(query, conn)
 
+  # Decode 'tcp_payload' column to a string assuming it contains text data
+  df['tcp_payload'] = df['tcp_payload'].apply(
+    lambda x: x.decode('utf-8', errors='ignore'))
+
   # Extract URLs from HTTP requests
   df['url'] = df['tcp_payload'].str.extract(r'GET ([^\s]+) HTTP')
 
@@ -32,6 +36,10 @@ def analyze_user_agents(db_file, top_n=10):
         WHERE tcp_payload LIKE '%User-Agent:%'
     '''
   df = pd.read_sql_query(query, conn)
+
+  # Decode 'tcp_payload' column to a string assuming it contains text data
+  df['tcp_payload'] = df['tcp_payload'].apply(
+    lambda x: x.decode('utf-8', errors='ignore'))
 
   # Extract User-Agent values from HTTP requests
   df['user_agent'] = df['tcp_payload'].str.extract(r'User-Agent: ([^\r\n]+)')
@@ -53,6 +61,10 @@ def analyze_security_headers(db_file):
     '''
   df = pd.read_sql_query(query, conn)
 
+  # Decode 'tcp_payload' column to a string assuming it contains text data
+  df['tcp_payload'] = df['tcp_payload'].apply(
+    lambda x: x.decode('utf-8', errors='ignore'))
+
   # Extract security-related headers from HTTP responses
   security_headers = df['tcp_payload'].str.extractall(
     r'(Strict-Transport-Security:|X-Frame-Options:|Content-Security-Policy:|X-XSS-Protection:|X-Content-Type-Options:|X-Content-Security-Policy:) ([^\r\n]+)'
@@ -72,6 +84,10 @@ def analyze_https_adoption(db_file):
     '''
   df = pd.read_sql_query(query, conn)
 
+  # Decode 'tcp_payload' column to a string assuming it contains text data
+  df['tcp_payload'] = df['tcp_payload'].apply(
+    lambda x: x.decode('utf-8', errors='ignore'))
+
   # Count occurrences of HTTP and HTTPS requests
   http_vs_https = df['tcp_payload'].str.extract(
     r'([A-Z]+) (https?:\/\/[^\s]+) HTTP')
@@ -88,9 +104,13 @@ def analyze_authentication_headers(db_file):
   query = '''
         SELECT src_ip, dst_ip, tcp_payload
         FROM packets
-        WHERE tcp_payload LIKE '%Authorization:% OR tcp_payload LIKE '%WWW-Authenticate:%'
+        WHERE tcp_payload LIKE '%Authorization:%' OR tcp_payload LIKE '%WWW-Authenticate:%'
     '''
   df = pd.read_sql_query(query, conn)
+
+  # Decode 'tcp_payload' column to a string assuming it contains text data
+  df['tcp_payload'] = df['tcp_payload'].apply(
+    lambda x: x.decode('utf-8', errors='ignore'))
 
   # Extract authentication-related headers from HTTP requests and responses
   auth_headers = df['tcp_payload'].str.extractall(
@@ -101,6 +121,7 @@ def analyze_authentication_headers(db_file):
 
 
 # Suspicious URL Patterns Analysis:
+# Suspicious URL Patterns Analysis:
 def analyze_suspicious_url_patterns(db_file):
   conn = sqlite3.connect(db_file)
   query = '''
@@ -109,6 +130,10 @@ def analyze_suspicious_url_patterns(db_file):
         WHERE tcp_payload LIKE '%HTTP%'
     '''
   df = pd.read_sql_query(query, conn)
+
+  # Decode 'tcp_payload' column to a string assuming it contains text data
+  df['tcp_payload'] = df['tcp_payload'].apply(
+    lambda x: x.decode('utf-8', errors='ignore'))
 
   # Identify suspicious URL patterns using regular expressions
   suspicious_urls = df['tcp_payload'].str.extractall(

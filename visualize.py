@@ -1,9 +1,11 @@
 import sqlite3
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-import networkx as nx
 import datetime
 import statistics  # For calculating mean, median, and standard deviation in analyze_db function
+import argparse
+
+import networkx as nx
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
 
 def visualize_packet_flow_from_db(db_file):
@@ -395,12 +397,41 @@ def visualize_rtt_from_db(database_file):
 
 # Example usage
 if __name__ == '__main__':
-  db_file = 'database.db'
-  visualize_packet_flow_from_db(db_file)
-  visualize_packet_duration_histogram(db_file)
-  visualize_packet_size_distribution(db_file)
-  visualize_packet_sequence_numbers(db_file)
-  visualize_packet_interarrival_time(db_file)
-  visualize_packet_throughput(db_file)
-  visualize_window_size_variation(db_file)
-  visualize_rtt_from_db(db_file)
+  parser = argparse.ArgumentParser(description='Network Traffic Analysis')
+  parser.add_argument('database_file',
+                      type=str,
+                      help='Path to the SQLite database file')
+  parser.add_argument('--function',
+                      choices=[
+                        'packet_flow', 'duration_histogram',
+                        'size_distribution', 'sequence_numbers',
+                        'interarrival_time', 'throughput',
+                        'window_size_variation', 'rtt'
+                      ],
+                      help='Choose a function to run')
+  args = parser.parse_args()
+
+  db_file = args.database_file
+
+  if args.function == 'packet_flow':
+    visualize_packet_flow_from_db(db_file)
+  elif args.function == 'duration_histogram':
+    visualize_packet_duration_histogram(db_file)
+  elif args.function == 'size_distribution':
+    visualize_packet_size_distribution(db_file)
+  elif args.function == 'sequence_numbers':
+    visualize_packet_sequence_numbers(db_file)
+  elif args.function == 'interarrival_time':
+    visualize_packet_interarrival_time(db_file)
+  elif args.function == 'throughput':
+    visualize_packet_throughput(db_file)
+  elif args.function == 'window_size_variation':
+    visualize_window_size_variation(db_file)
+  elif args.function == 'rtt':
+    visualize_rtt_from_db(db_file)
+  else:
+    print(
+      "Invalid function choice. Please choose one of the following functions:")
+    print(
+      "packet_flow, duration_histogram, size_distribution, sequence_numbers, interarrival_time, throughput, window_size_variation, rtt"
+    )

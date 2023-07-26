@@ -1,19 +1,19 @@
 import time  # For printing timestamps in printable_timestamp function
-import pickle  # For pickling packets in pickle_pcap function
+import pickle  # For reading packets in pickle_pcap function and for writing the pickle file in load_pickle_to_sql function
 import sqlite3  # For creating the database in load_pickle_to_sql function
-import textwrap
-import binascii
-import re
-from analyze import analyze_popular_urls, analyze_user_agents, analyze_security_headers, analyze_https_adoption, analyze_authentication_headers, analyze_suspicious_url_patterns
+import textwrap # For wrapping TCP payload in print_packet_content function
+import binascii # For printing packet data in print_packet_data function
 
 import pandas as pd  # For printing packet data in print_packet_data function
-from scapy.all import *
-from scapy.utils import RawPcapReader  # For reading packets from a pcap file in pickle_pcap function
+
+from scapy.all import * # For reading packets in pickle_pcap function and for printing packet data in print_packet_data function
 from scapy.layers.l2 import Ether  # For packet dissection in pickle_pcap function
 from scapy.layers.inet import IP, TCP  # For packet dissection in pickle_pcap function
 from enum import Enum  # For PktDirection enum in pickle_pcap function
 from tqdm import tqdm  # For progress bar in pickle_pcap functionz
-from prettytable import PrettyTable
+from prettytable import PrettyTable # For printing packet content in print_packet_content function
+
+from analyze import analyze_popular_urls, analyze_user_agents, analyze_security_headers, analyze_https_adoption, analyze_authentication_headers, analyze_suspicious_url_patterns
 
 from visualize import visualize_packet_flow_from_db, visualize_packet_duration_histogram, visualize_packet_size_distribution, visualize_packet_sequence_numbers, visualize_packet_interarrival_time, visualize_packet_throughput, visualize_window_size_variation, visualize_rtt_from_db
 
@@ -345,7 +345,6 @@ pickle_pcap(pcap_file, pickle_file)
 load_pickle_to_sql(pickle_file, database_file)
 print_packet_data(database_file)
 select_and_analyze_packets()
-
 
 # Run HTTP analysis functions
 popular_urls = analyze_popular_urls(database_file)
