@@ -14,3 +14,7 @@ node_modules/
 
 # Visual Studio Code
 .vscode/
+
+# pcap files
+./pcap
+*.pcap
