@@ -94,6 +94,12 @@ pip install tqdm
 pip install prettytable
 ```
 
+- argparse: A library for parsing command-line arguments. To install argparse, use pip:
+
+```shell
+pip install argparse
+```
+
 Make sure you have Python installed on your system before proceeding with the library installations.
 
 Once you have installed these libraries, you can run the program with the required dependencies. For example, you can run the program in your shell using the Python interpreter:
@@ -152,8 +158,24 @@ Note: The functions assume that the database contains specific columns, such as 
 
 To use these visualizations, you need to have Python and the required dependencies (Matplotlib, NetworkX, and datetime) installed on your system. You can run the script from the command line and pass the path to the SQLite database file as an argument. For example:
 
+You can run the script from the shell command line and specify the function to be executed along with the path to the SQLite database file. For example:
+
 ```shell
-python Visualize.py path/to/pcap_data.db
+python Visualize.py path/to/pcap_data.db --function packet_flow
+```
+
+This will execute the `visualize_packet_flow_from_db` function and display the packet flow diagram. Similarly, you can run other functions one by one by changing the `--function` argument.
+
+For example:
+
+```shell
+python Visualize.py path/to/pcap_data.db --function duration_histogram
+python Visualize.py path/to/pcap_data.db --function size_distribution
+python Visualize.py path/to/pcap_data.db --function sequence_numbers
+python Visualize.py path/to/pcap_data.db --function interarrival_time
+python Visualize.py path/to/pcap_data.db --function throughput
+python Visualize.py path/to/pcap_data.db --function window_size_variation
+python Visualize.py path/to/pcap_data.db --function rtt
 ```
 
 The script will then execute all the visualization functions on the provided database and display the plots for each visualization.
