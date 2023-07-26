@@ -20,7 +20,7 @@ from visualize import visualize_packet_flow_from_db, visualize_packet_duration_h
 # Specify the path and name of the database file
 database_file = 'database.db'
 
-pcap_file = 'pcap/bigFlows.pcap'
+pcap_file = 'pcap/test.pcap'
 
 pickle_file = 'pickle_file.pickle'
 
@@ -64,8 +64,8 @@ def printable_timestamp(ts, resol):
   ts_sec_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(ts_sec))
   return '{}.{}'.format(ts_sec_str, ts_subsec)
 
-# Sobhan's & Petar's Code
-def filter_and_pickle_pcap(pcap_file_in, pickle_file_out):
+
+def pickle_pcap(pcap_file_in, pickle_file_out):
   print('Processing {}...'.format(pcap_file_in))
 
   connections = []
@@ -147,7 +147,7 @@ def filter_and_pickle_pcap(pcap_file_in, pickle_file_out):
 
 ###-------------------------------------------------------------------###
 
-# Ahmed's & Jorge's Code
+
 def load_pickle_to_sql(pickle_file_in, db_file):
   print('Processing {}...'.format(pickle_file_in))
 
@@ -341,154 +341,10 @@ def select_and_analyze_packets():
     select_and_analyze_packets()
 
 
-filter_and_pickle_pcap(pcap_file, pickle_file)
+pickle_pcap(pcap_file, pickle_file)
 load_pickle_to_sql(pickle_file, database_file)
 print_packet_data(database_file)
 select_and_analyze_packets()
-
-
-def analyze_popular_urls(db_file, top_n=10):
-  conn = sqlite3.connect(db_file)
-  query = '''
-        SELECT src_ip, dst_ip, tcp_payload
-        FROM packets
-        WHERE tcp_payload LIKE '%HTTP%'
-    '''
-  df = pd.read_sql_query(query, conn)
-
-  # Decode TCP payload to string assuming it contains text data
-  df['tcp_payload'] = df['tcp_payload'].apply(
-    lambda x: x.decode('utf-8', errors='ignore'))
-
-  # Extract URLs from HTTP requests
-  df['url'] = df['tcp_payload'].str.extract(r'GET ([^\s]+) HTTP')
-
-  # Count occurrences of each URL
-  popular_urls = df['url'].value_counts().nlargest(top_n)
-
-  conn.close()
-  return popular_urls
-
-
-#User-Agent Analysis:
-def analyze_user_agents(db_file, top_n=10):
-  conn = sqlite3.connect(db_file)
-  query = '''
-        SELECT src_ip, dst_ip, tcp_payload
-        FROM packets
-        WHERE tcp_payload LIKE '%User-Agent:%'
-    '''
-  df = pd.read_sql_query(query, conn)
-
-  # Decode TCP payload to string assuming it contains text data
-  df['tcp_payload'] = df['tcp_payload'].apply(
-    lambda x: x.decode('utf-8', errors='ignore'))
-
-  # Extract User-Agent values from HTTP requests
-  user_agents_requests = df[df['tcp_payload'].str.contains(
-    'User-Agent:')]['tcp_payload'].str.extract(r'User-Agent: ([^\r\n]+)')
-
-  # Extract User-Agent values from HTTP responses
-  user_agents_responses = df[~df['tcp_payload'].str.contains('User-Agent:')][
-    'tcp_payload'].str.extract(r'User-Agent: ([^\r\n]+)')
-
-  # Combine both occurrences of User-Agent values
-  user_agents = pd.concat([user_agents_requests, user_agents_responses],
-                          ignore_index=True)
-
-  # Count occurrences of each User-Agent
-  top_user_agents = user_agents[0].value_counts().nlargest(top_n)
-
-  conn.close()
-  return top_user_agents
-
-
-#Security Header Analysis:
-def analyze_security_headers(db_file):
-  conn = sqlite3.connect(db_file)
-  query = '''
-        SELECT src_ip, dst_ip, tcp_payload
-        FROM packets
-        WHERE tcp_payload LIKE '%HTTP%'
-    '''
-  df = pd.read_sql_query(query, conn)
-
-  # Decode TCP payload to string assuming it contains text data
-  df['tcp_payload'] = df['tcp_payload'].apply(
-    lambda x: x.decode('utf-8', errors='ignore'))
-
-  # Extract security-related headers from HTTP responses using regular expression
-  security_headers = df['tcp_payload'].apply(lambda x: re.findall(
-    r'(Strict-Transport-Security:|X-Frame-Options:|Content-Security-Policy:|X-XSS-Protection:|X-Content-Type-Options:|X-Content-Security-Policy:) ([^\r\n]+)',
-    x))
-
-  conn.close()
-  return security_headers
-
-
-#HTTPS Adoption Analysis:
-def analyze_https_adoption(db_file):
-  conn = sqlite3.connect(db_file)
-  query = '''
-        SELECT src_ip, dst_ip, tcp_payload
-        FROM packets
-        WHERE tcp_payload LIKE '%HTTP%'
-    '''
-  df = pd.read_sql_query(query, conn)
-
-  # Decode TCP payload to string assuming it contains text data
-  df['tcp_payload'] = df['tcp_payload'].apply(
-    lambda x: x.decode('utf-8', errors='ignore'))
-
-  # Extract HTTP/HTTPS request types based on the presence of "GET" or "CONNECT" in the payload
-  http_vs_https = df['tcp_payload'].str.extract(
-    r'([A-Z]+) (https?:\/\/[^\s]+) HTTP')
-
-  # Count occurrences of HTTP and HTTPS requests
-  https_count = (http_vs_https[0] == 'CONNECT').sum()
-  http_count = (http_vs_https[0] == 'GET').sum()
-
-  conn.close()
-  return https_count, http_count
-
-
-#Authentication Analysis:
-def analyze_authentication_headers(db_file):
-  conn = sqlite3.connect(db_file)
-  query = '''
-        SELECT src_ip, dst_ip, tcp_payload
-        FROM packets
-        WHERE tcp_payload LIKE '%Authorization:%' OR tcp_payload LIKE '%WWW-Authenticate:%'
-    '''
-  df = pd.read_sql_query(query, conn)
-  conn.close()
-  return df
-
-
-# Suspicious URL Patterns Analysis:
-def analyze_suspicious_url_patterns(db_file):
-  conn = sqlite3.connect(db_file)
-  query = '''
-        SELECT src_ip, dst_ip, tcp_payload
-        FROM packets
-        WHERE tcp_payload LIKE '%HTTP%'
-    '''
-  df = pd.read_sql_query(query, conn)
-
-  # Decode TCP payload to string assuming it contains text data
-  df['tcp_payload'] = df['tcp_payload'].apply(
-    lambda x: x.decode('utf-8', errors='ignore'))
-
-  # Identify suspicious URL patterns using regular expressions
-  suspicious_urls = df['tcp_payload'].str.extractall(
-    r'GET ([^\s]+) HTTP').reset_index(drop=True)
-  suspicious_urls.columns = ['url']
-
-  suspicious_patterns = suspicious_urls[suspicious_urls['url'].str.contains(
-    r'sql|cmd|php|jsp|asp', case=False, na=False)]
-
-  conn.close()
-  return suspicious_patterns
 
 
 # Run HTTP analysis functions
