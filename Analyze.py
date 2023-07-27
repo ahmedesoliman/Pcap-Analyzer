@@ -1,5 +1,5 @@
-import argparse
-import sqlite3
+import argparse # For parsing command-line arguments
+import sqlite3 # For connecting to the SQLite database file
 import pandas as pd  # For printing packet data in print_packet_data function
 
 
@@ -119,8 +119,6 @@ def analyze_authentication_headers(db_file):
   conn.close()
   return auth_headers
 
-
-# Suspicious URL Patterns Analysis:
 # Suspicious URL Patterns Analysis:
 def analyze_suspicious_url_patterns(db_file):
   conn = sqlite3.connect(db_file)

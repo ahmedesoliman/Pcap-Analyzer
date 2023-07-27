@@ -1,27 +1,29 @@
 import time  # For printing timestamps in printable_timestamp function
-import pickle  # For reading packets in pickle_pcap function and for writing the pickle file in load_pickle_to_sql function
+import pickle  # For reading packets in filter_and_pickle_pcap function and for writing the pickle file in load_pickle_to_sql function
 import sqlite3  # For creating the database in load_pickle_to_sql function
-import textwrap # For wrapping TCP payload in print_packet_content function
-import binascii # For printing packet data in print_packet_data function
+import textwrap  # For wrapping TCP payload in print_packet_content function
+import binascii  # For printing packet data in print_packet_data function
 
 import pandas as pd  # For printing packet data in print_packet_data function
 
-from scapy.all import * # For reading packets in pickle_pcap function and for printing packet data in print_packet_data function
-from scapy.layers.l2 import Ether  # For packet dissection in pickle_pcap function
-from scapy.layers.inet import IP, TCP  # For packet dissection in pickle_pcap function
-from enum import Enum  # For PktDirection enum in pickle_pcap function
-from tqdm import tqdm  # For progress bar in pickle_pcap functionz
-from prettytable import PrettyTable # For printing packet content in print_packet_content function
+from scapy.all import *  # For reading packets in filter_and_pickle_pcap function and for printing packet data in print_packet_data function
+from scapy.layers.l2 import Ether  # For packet dissection in filter_and_pickle_pcap function
+from scapy.layers.inet import IP, TCP  # For packet dissection in filter_and_pickle_pcap function
+from enum import Enum  # For PktDirection enum in filter_and_pickle_pcap function
+from tqdm import tqdm  # For progress bar in filter_and_pickle_pcap function
+from prettytable import PrettyTable  # For printing packet content in print_packet_content function
 
 from analyze import analyze_popular_urls, analyze_user_agents, analyze_security_headers, analyze_https_adoption, analyze_authentication_headers, analyze_suspicious_url_patterns
 
 from visualize import visualize_packet_flow_from_db, visualize_packet_duration_histogram, visualize_packet_size_distribution, visualize_packet_sequence_numbers, visualize_packet_interarrival_time, visualize_packet_throughput, visualize_window_size_variation, visualize_rtt_from_db
 
-# Specify the path and name of the database file
+# The path and name of the database file
 database_file = 'database.db'
 
+# the path and name of the pcap file
 pcap_file = 'pcap/test.pcap'
 
+# The path and name of the pickle file
 pickle_file = 'pickle_file.pickle'
 
 # Create a connection to the database
@@ -51,13 +53,14 @@ create_table_sql = '''CREATE TABLE IF NOT EXISTS packets (
 # Execute the SQL statement to create the table
 cursor.execute(create_table_sql)
 
-
+# Define an enum for packet direction (client to server or server to client)
 class PktDirection(Enum):
   not_defined = 0
   client_to_server = 1
   server_to_client = 2
 
 
+# Define a function to print a timestamp in the format of YYYY-MM-DD HH:MM:SS.ssssss (where ssssss is microseconds) from a relative timestamp and a resolution
 def printable_timestamp(ts, resol):
   ts_sec = ts // resol
   ts_subsec = ts % resol
@@ -65,49 +68,56 @@ def printable_timestamp(ts, resol):
   return '{}.{}'.format(ts_sec_str, ts_subsec)
 
 
-def pickle_pcap(pcap_file_in, pickle_file_out):
+# Define a function to filter packets from a pcap file and store them in a pickle file for later processing and analysis
+def filter_and_pickle_pcap(pcap_file_in, pickle_file_out):
   print('Processing {}...'.format(pcap_file_in))
 
-  connections = []
-  interesting_packet_count = 0
+  connections = [
+  ]  # List of connections (each connection is a dictionary) to be pickled and stored in the pickle file at the end of the function call
+  interesting_packet_count = 0  # Number of interesting packets (packets that belong to a connection) to be printed at the end of the function call
 
-  packet_iterator = rdpcap(pcap_file_in)
+  packet_iterator = rdpcap(
+    pcap_file_in)  # Create a packet iterator from the pcap file
 
-  total_packets = len(packet_iterator)
-  progress_bar = tqdm(total=total_packets, desc='Processing', unit=' packets')
+  total_packets = len(packet_iterator)  # Get the total number of packets
+  progress_bar = tqdm(total=total_packets, desc='Processing',
+                      unit=' packets')  # Create a progress bar
 
   for pkt in packet_iterator:
     try:
-      ether_pkt = pkt[Ether]
+      ether_pkt = pkt[Ether]  # Get the Ethernet layer of the packet
     except IndexError:
       # Skip packets without an Ethernet layer
       continue
 
-    if 'type' not in ether_pkt.fields:
+    if 'type' not in ether_pkt.fields:  # Skip packets without a type field in the Ethernet layer (e.g. LLC frames)
       # LLC frames will have 'len' instead of 'type'.
       # We disregard those
       continue
 
-    if ether_pkt.type != 0x0800:
+    if ether_pkt.type != 0x0800:  # Skip non-IPv4 packets
       # Disregard non-IPv4 packets
       continue
 
-    ip_pkt = pkt[IP]
+    ip_pkt = pkt[IP]  # Get the IP layer of the packet
 
-    if ip_pkt.proto != 6:
+    if ip_pkt.proto != 6:  # Skip non-TCP packets (e.g. UDP)
       # Ignore non-TCP packets
       continue
 
-    src_ip, dst_ip = ip_pkt.src, ip_pkt.dst
-    tcp_pkt = ip_pkt[TCP]
+    src_ip, dst_ip = ip_pkt.src, ip_pkt.dst  # Get the source and destination IP addresses from the IP layer of the packet
+    tcp_pkt = ip_pkt[TCP]  # Get the TCP layer of the packet
 
-    src_port, dst_port = tcp_pkt.sport, tcp_pkt.dport
+    src_port, dst_port = tcp_pkt.sport, tcp_pkt.dport  # Get the source and destination port numbers from the TCP layer of the packet
 
     # Check if this packet belongs to a connection
-    connection_key = (src_ip, src_port, dst_ip, dst_port)
+    connection_key = (
+      src_ip, src_port, dst_ip, dst_port
+    )  # Create a connection key from the source and destination IP addresses and port numbers
 
     interesting_packet_count += 1
 
+    # Check if this connection is already in the connections list (i.e. if this connection has already been seen)
     if connection_key not in [conn['connection_key'] for conn in connections]:
       # This is a new connection, add it to the connections list
       connection_data = {'connection_key': connection_key, 'packets': []}
@@ -130,7 +140,9 @@ def pickle_pcap(pcap_file_in, pickle_file_out):
       'dst_mac': ether_pkt.dst,
     }
 
-    connection_data['packets'].append(packet_data)
+    connection_data['packets'].append(
+      packet_data
+    )  # Append the packet data to the corresponding connection in the connections list
 
     progress_bar.update()
 
@@ -145,9 +157,7 @@ def pickle_pcap(pcap_file_in, pickle_file_out):
   print('done.')
 
 
-###-------------------------------------------------------------------###
-
-
+# Define a function to load packets from a pickle file and store them in a database for later processing and analysis
 def load_pickle_to_sql(pickle_file_in, db_file):
   print('Processing {}...'.format(pickle_file_in))
 
@@ -221,7 +231,7 @@ def load_pickle_to_sql(pickle_file_in, db_file):
   print('Stored {} packets in the database.'.format(total_packets))
 
 
-###------------------------------------------###
+# Define a function to print packet data from the database to the console for debugging purposes (not used in the final program)
 def print_packet_data(db_file, direction=None):
   # Create a connection to the database
   conn = sqlite3.connect(db_file)
@@ -236,6 +246,7 @@ def print_packet_data(db_file, direction=None):
   conn.close()
 
 
+# Define a function to calculate the duration of a packet from its relative timestamp and the relative timestamp of the previous packet in the database
 def calculate_packet_duration(timestamp):
   # Retrieve the previous packet's relative timestamp from the database
   select_previous_sql = 'SELECT MAX(relative_timestamp) FROM packets WHERE relative_timestamp < ?'
@@ -253,6 +264,7 @@ def calculate_packet_duration(timestamp):
   return duration
 
 
+# Define a function to print the content of a packet from the database to the console
 def print_packet_content(packet_id):
   select_sql = 'SELECT * FROM packets WHERE id = ?'
   cursor.execute(select_sql, (packet_id, ))
@@ -260,7 +272,7 @@ def print_packet_content(packet_id):
   # Fetch the selected row
   row = cursor.fetchone()
 
-  if row:
+  if row:  # If the row is not None
     _, src_ip, dst_ip, direction, ordinal, relative_timestamp, tcp_flags, seqno, ackno, tcp_payload_len, tcp_payload, window, src_mac, dst_mac = row
 
     # Create a PrettyTable object
@@ -304,6 +316,7 @@ def print_packet_content(packet_id):
     print("Packet not found.")
 
 
+# Define a function to analyze a packet from the database as needed
 def analyze_packet(packet_id):
   select_sql = 'SELECT * FROM packets WHERE id = ?'
   cursor.execute(select_sql, (packet_id, ))
@@ -318,8 +331,7 @@ def analyze_packet(packet_id):
     packet_duration = calculate_packet_duration(relative_timestamp)
     # Print packet duration
     print("Packet Duration:", packet_duration)
-
-    # Perform further analysis on the packet as needed
+    # Perform further analysis on the packet as needed 
   else:
     print("Packet not found.")
 
@@ -341,7 +353,8 @@ def select_and_analyze_packets():
     select_and_analyze_packets()
 
 
-pickle_pcap(pcap_file, pickle_file)
+# Run the functions to filter and pickle the pcap file, load the pickle file to the database, and print packet data from the database
+filter_and_pickle_pcap(pcap_file, pickle_file)
 load_pickle_to_sql(pickle_file, database_file)
 print_packet_data(database_file)
 select_and_analyze_packets()
@@ -355,19 +368,19 @@ auth_headers = analyze_authentication_headers(database_file)
 suspicious_patterns = analyze_suspicious_url_patterns(database_file)
 
 # Notify the client with the results
-print("HTTP Analysis Results:")
-print("1. Popular URLs:")
+print("*** HTTP Analysis Results ***")
+print("----- Popular URLs Analysis -----")
 print(popular_urls)
-print("\n2. Top User Agents:")
+print("\n----- User-Agent Analysis -----")
 print(user_agents)
-print("\n3. Security Headers:")
+print("\n----- Security Headers Analysis -----")
 print(security_headers)
-print("\n4. HTTPS Adoption:")
+print("\n----- HTTPS Adoption Analysis -----")
 print(f"Number of HTTPS requests: {https_count}")
 print(f"Number of HTTP requests: {http_count}")
-print("\n5. Authentication Headers:")
+print("\n----- Authentication Headers Analysis -----")
 print(auth_headers)
-print("\n6. Suspicious URL Patterns:")
+print("\n----- Suspicious URL Patterns Analysis -----")
 print(suspicious_patterns)
 
 # Call the visualization functions as needed
@@ -379,3 +392,5 @@ visualize_packet_interarrival_time(database_file)
 visualize_packet_throughput(database_file)
 visualize_window_size_variation(database_file)
 visualize_rtt_from_db(database_file)
+
+conn.close()

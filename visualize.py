@@ -1,13 +1,14 @@
-import sqlite3
-import datetime
+import sqlite3  # For connecting to the database and executing SQL queries
+import datetime  # For converting timestamps to datetime objects
 import statistics  # For calculating mean, median, and standard deviation in analyze_db function
-import argparse
+import argparse  # For parsing command-line arguments in main function
 
-import networkx as nx
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
+import networkx as nx  # For creating a directed graph
+import matplotlib.pyplot as plt  # For plotting graphs
+import matplotlib.dates as mdates  # For formatting x-axis tick labels in visualize_packet_throughput function
 
 
+# Visualize Packet Flow:
 def visualize_packet_flow_from_db(db_file):
   # Create a connection to the database
   conn = sqlite3.connect(db_file)
@@ -83,6 +84,7 @@ def visualize_packet_flow_from_db(db_file):
   conn.close()
 
 
+# Visualize Packet Duration Histogram:
 def visualize_packet_duration_histogram(db_file):
   # Create a connection to the database
   conn = sqlite3.connect(db_file)
@@ -133,6 +135,30 @@ def visualize_packet_size_distribution(db_file):
 
 
 #Visualize TCP Flags Distribution:
+def visualize_tcp_flags_distribution(db_file):
+  # Create a connection to the database
+  conn = sqlite3.connect(db_file)
+
+  # Read the TCP flags from the table
+  select_sql = 'SELECT tcp_flags FROM packets'
+  cursor = conn.cursor()
+  cursor.execute(select_sql)
+  tcp_flags = [row[0] for row in cursor.fetchall()]
+
+  # Plot the histogram
+  plt.hist(tcp_flags, bins=10)
+  plt.xlabel('TCP Flags')
+  plt.ylabel('Frequency')
+  plt.title('Distribution of TCP Flags')
+  plt.show()
+
+  # Close the cursor
+  cursor.close()
+
+  # Close the connection
+  conn.close()
+
+
 # Visualize Packet Sequence Numbers:
 def visualize_packet_sequence_numbers(db_file):
   # Create a connection to the database
@@ -169,6 +195,7 @@ def visualize_packet_sequence_numbers(db_file):
   conn.close()
 
 
+# calculate_packet_interarrival_time function:
 def calculate_packet_interarrival_time(database_file):
   # Create a connection to the database
   conn = sqlite3.connect(database_file)
@@ -205,6 +232,7 @@ def calculate_packet_interarrival_time(database_file):
   return datetime_timestamps[1:], interarrival_times[1:]
 
 
+# Visualize Packet Interarrival Time:
 def visualize_packet_interarrival_time(database_file):
   # Calculate the interarrival times
   datetime_timestamps, interarrival_times = calculate_packet_interarrival_time(
@@ -260,6 +288,7 @@ def calculate_packet_throughput(database_file):
   return datetime_timestamps[:-1], throughput
 
 
+# Visualize Packet Throughput:
 def visualize_packet_throughput(database_file):
   # Calculate the throughput
   datetime_timestamps, throughput = calculate_packet_throughput(database_file)
@@ -319,6 +348,7 @@ def visualize_window_size_variation(db_file):
   conn.close()
 
 
+# calculate_rtt function:
 def calculate_rtt(database_file):
   # Create a connection to the database
   conn = sqlite3.connect(database_file)
@@ -350,6 +380,7 @@ def calculate_rtt(database_file):
   return rtt_list
 
 
+# Visualize Round-Trip Time (RTT):
 def visualize_rtt_from_db(database_file):
   # Calculate RTT values from the database
   rtt_values = calculate_rtt(database_file)
